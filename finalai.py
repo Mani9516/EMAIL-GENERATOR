@@ -1,85 +1,66 @@
 import streamlit as st
-import requests
-from bs4 import BeautifulSoup
-import phonenumbers
-import re
+import cohere
 
-# Streamlit Web Scraper class
-class WebScraper:
-    def __init__(self):
-        self.create_widgets()
+# Set your Cohere API key
+api_key = '1x80ZH7kbo388pl1NneQIAIuIIWhXJb9s4QObRLn'
+co = cohere.Client(api_key)
 
-    def create_widgets(self):
-        st.title("Creative Web Scraper")
+# EmailPrompt class to structure the input
+class EmailPrompt:
+    def __init__(self, user_prompt, recipient_name, sender_name, sender_position):
+        self.user_prompt = user_prompt
+        self.recipient_name = recipient_name
+        self.sender_name = sender_name
+        self.sender_position = sender_position
 
-        # URL input
-        url = st.text_input("Enter URL:", "")
-        if st.button("Scrape"):
-            if url:
-                self.scrape(url)
+    def to_prompt(self):
+        return f"""
+### User Prompt: {self.user_prompt}
 
-    def scrape(self, url):
-        try:
-            response = requests.get(url)
-            soup = BeautifulSoup(response.text, 'html.parser')
+### Recipient Information:
+- Name: {self.recipient_name}
 
-            # Sets to avoid duplicate entries
-            names = set()
-            phone_numbers = set()
-            email_addresses = set()
+### Sender Information:
+- Name: {self.sender_name}
+- Position: {self.sender_position}
 
-            # Extract relevant data from <p>, <li>, <td> tags
-            for tag in soup.find_all(['p', 'li', 'td']):
-                text = tag.get_text(separator=' ', strip=True)
-                
-                # Match names (e.g., "John Doe")
-                if re.match(r'\b[A-Z][a-z]+ [A-Z][a-z]+\b', text):
-                    names.add(text)
-                
-                # Match phone numbers using phonenumbers library
-                for match in phonenumbers.PhoneNumberMatcher(text, "IN"):  # Adjust country code if needed
-                    phone_numbers.add(phonenumbers.format_number(match.number, phonenumbers.PhoneNumberFormat.E164))
-                
-                # Match emails using regex
-                if re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text):
-                    email_addresses.add(re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text).group())
+### Generated Email:
+"""
 
-            # Convert sets to lists for easy display
-            names = list(names)
-            phone_numbers = list(phone_numbers)
-            email_addresses = list(email_addresses)
+# Function to generate email using Cohere
+def generate_email(prompt: EmailPrompt):
+    full_prompt = prompt.to_prompt()
+    
+    response = co.generate(
+        model='command-xlarge-nightly',  # Use the appropriate model
+        prompt=full_prompt,
+        max_tokens=200,
+        temperature=0.7,
+    )
+    
+    email_body = response.generations[0].text.strip()
+    return email_body
 
-            # Display scraped data in Streamlit
-            if names or phone_numbers or email_addresses:
-                st.subheader("Scraped Results")
-
-                results = []
-                max_len = max(len(names), len(phone_numbers), len(email_addresses))
-                for i in range(max_len):
-                    name = names[i] if i < len(names) else ''
-                    phone = phone_numbers[i] if i < len(phone_numbers) else ''
-                    email = email_addresses[i] if i < len(email_addresses) else ''
-                    results.append((name, phone, email))
-
-                # Display results in a dataframe
-                df = {
-                    'Name': [row[0] for row in results],
-                    'Phone': [row[1] for row in results],
-                    'Email': [row[2] for row in results]
-                }
-
-                st.write(df)
-            else:
-                st.warning("No data found.")
-
-        except requests.exceptions.RequestException as e:
-            st.error(f"Error fetching URL: {e}")
-        except Exception as e:
-            st.error(f"An error occurred: {e}")
-
-# Main function
+# Streamlit app layout
 def main():
-    scraper = WebScraper()
+    st.title("AI Email Generator")
 
+    # User input fields
+    user_prompt = st.text_input("Enter your email prompt:")
+    recipient_name = st.text_input("Enter recipient name:")
+    sender_name = st.text_input("Enter your name:")
+    sender_position = st.text_input("Enter your position:")
+
+    # Generate button and action
+    if st.button("Generate Email"):
+        if not user_prompt or not recipient_name or not sender_name or not sender_position:
+            st.warning("All fields are required!")
+        else:
+            prompt = EmailPrompt(user_prompt, recipient_name, sender_name, sender_position)
+            email_body = generate_email(prompt)
+            st.subheader("Generated Email")
+            st.text_area("Email Body", value=email_body, height=300)
+
+# Run the app
 if __name__ == "__main__":
     main()
