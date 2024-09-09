@@ -1,5 +1,5 @@
+import cohere  # Corrected the import statement
 import streamlit as st
-import cohere
 
 # Set your Cohere API key
 api_key = '1x80ZH7kbo388pl1NneQIAIuIIWhXJb9s4QObRLn'
