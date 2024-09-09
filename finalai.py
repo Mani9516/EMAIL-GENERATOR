@@ -1,91 +1,85 @@
-import cohere
-import tkinter as tk
-from tkinter import messagebox
+import streamlit as st
+import requests
+from bs4 import BeautifulSoup
+import phonenumbers
+import re
 
-# Set your Cohere API key here
-api_key = '1x80ZH7kbo388pl1NneQIAIuIIWhXJb9s4QObRLn'
-co = cohere.Client(api_key)
+# Streamlit Web Scraper class
+class WebScraper:
+    def __init__(self):
+        self.create_widgets()
 
-class EmailPrompt:
-    def __init__(self, user_prompt, recipient_name, sender_name, sender_position):
-        self.user_prompt = user_prompt
-        self.recipient_name = recipient_name
-        self.sender_name = sender_name
-        self.sender_position = sender_position
+    def create_widgets(self):
+        st.title("Creative Web Scraper")
 
-    def to_prompt(self):
-        return f"""
-### User Prompt: {self.user_prompt}
+        # URL input
+        url = st.text_input("Enter URL:", "")
+        if st.button("Scrape"):
+            if url:
+                self.scrape(url)
 
-### Recipient Information:
-- Name: {self.recipient_name}
+    def scrape(self, url):
+        try:
+            response = requests.get(url)
+            soup = BeautifulSoup(response.text, 'html.parser')
 
-### Sender Information:
-- Name: {self.sender_name}
-- Position: {self.sender_position}
+            # Sets to avoid duplicate entries
+            names = set()
+            phone_numbers = set()
+            email_addresses = set()
 
-### Generated Email:
-"""
+            # Extract relevant data from <p>, <li>, <td> tags
+            for tag in soup.find_all(['p', 'li', 'td']):
+                text = tag.get_text(separator=' ', strip=True)
+                
+                # Match names (e.g., "John Doe")
+                if re.match(r'\b[A-Z][a-z]+ [A-Z][a-z]+\b', text):
+                    names.add(text)
+                
+                # Match phone numbers using phonenumbers library
+                for match in phonenumbers.PhoneNumberMatcher(text, "IN"):  # Adjust country code if needed
+                    phone_numbers.add(phonenumbers.format_number(match.number, phonenumbers.PhoneNumberFormat.E164))
+                
+                # Match emails using regex
+                if re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text):
+                    email_addresses.add(re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text).group())
 
-def generate_email(prompt: EmailPrompt):
-    full_prompt = prompt.to_prompt()
-    
-    response = co.generate(
-        model='command-xlarge-nightly',  # Use the appropriate model
-        prompt=full_prompt,
-        max_tokens=200,
-        temperature=0.7,
-    )
-    
-    email_body = response.generations[0].text.strip()
-    return email_body
+            # Convert sets to lists for easy display
+            names = list(names)
+            phone_numbers = list(phone_numbers)
+            email_addresses = list(email_addresses)
 
-def generate_email_and_display():
-    user_prompt = entry_user_prompt.get()
-    recipient_name = entry_recipient_name.get()
-    sender_name = entry_sender_name.get()
-    sender_position = entry_sender_position.get()
+            # Display scraped data in Streamlit
+            if names or phone_numbers or email_addresses:
+                st.subheader("Scraped Results")
 
-    if not user_prompt or not recipient_name or not sender_name or not sender_position:
-        messagebox.showwarning("Input Error", "All fields are required!")
-        return
+                results = []
+                max_len = max(len(names), len(phone_numbers), len(email_addresses))
+                for i in range(max_len):
+                    name = names[i] if i < len(names) else ''
+                    phone = phone_numbers[i] if i < len(phone_numbers) else ''
+                    email = email_addresses[i] if i < len(email_addresses) else ''
+                    results.append((name, phone, email))
 
-    prompt = EmailPrompt(user_prompt, recipient_name, sender_name, sender_position)
-    email_body = generate_email(prompt)
-    
-    result_text.config(state=tk.NORMAL)
-    result_text.delete(1.0, tk.END)
-    result_text.insert(tk.END, email_body)
-    result_text.config(state=tk.DISABLED)
+                # Display results in a dataframe
+                df = {
+                    'Name': [row[0] for row in results],
+                    'Phone': [row[1] for row in results],
+                    'Email': [row[2] for row in results]
+                }
 
-# Create the main window
-root = tk.Tk()
-root.title("AI Email Generator")
+                st.write(df)
+            else:
+                st.warning("No data found.")
 
-# Create and place the labels and entry widgets
-tk.Label(root, text="Enter your email prompt:").grid(row=0, column=0, sticky=tk.W)
-entry_user_prompt = tk.Entry(root, width=50)
-entry_user_prompt.grid(row=0, column=1)
+        except requests.exceptions.RequestException as e:
+            st.error(f"Error fetching URL: {e}")
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
 
-tk.Label(root, text="Enter recipient name:").grid(row=1, column=0, sticky=tk.W)
-entry_recipient_name = tk.Entry(root, width=50)
-entry_recipient_name.grid(row=1, column=1)
+# Main function
+def main():
+    scraper = WebScraper()
 
-tk.Label(root, text="Enter your name:").grid(row=2, column=0, sticky=tk.W)
-entry_sender_name = tk.Entry(root, width=50)
-entry_sender_name.grid(row=2, column=1)
-
-tk.Label(root, text="Enter your position:").grid(row=3, column=0, sticky=tk.W)
-entry_sender_position = tk.Entry(root, width=50)
-entry_sender_position.grid(row=3, column=1)
-
-# Create and place the generate button
-generate_button = tk.Button(root, text="Generate Email", command=generate_email_and_display)
-generate_button.grid(row=4, column=0, columnspan=2, pady=10)
-
-# Create and place the text widget for displaying the result
-result_text = tk.Text(root, height=15, width=70, state=tk.DISABLED)
-result_text.grid(row=5, column=0, columnspan=2, pady=10)
-
-# Run the main event loop
-root.mainloop()
+if __name__ == "__main__":
+    main()
